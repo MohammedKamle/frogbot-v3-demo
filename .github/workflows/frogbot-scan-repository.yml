@@ -35,3 +35,8 @@ jobs:
           JF_GIT_AGGREGATE_FIXES: "TRUE"
           # Ties violation reporting to the Security Policy created for this demo.
           JF_WATCHES: "frogbot-demo-npm-watch"
+          # Reports this scan into Xray's per-repo "Scans List" UI (Xray > Scans
+          # List > github.com > <org> > <repo>), in addition to the Watches &
+          # Policies > Violations view. Not related to Frogbot v3's Config
+          # Profile scan engine - v2 doesn't use that code path at all.
+          JF_USE_CONFIG_PROFILE: "TRUE"
