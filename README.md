@@ -30,6 +30,12 @@ commands):
 - ⬜ Create the `frogbot` GitHub Environment (recommended, not required).
 - ⬜ Trigger the first scan and verify the results described in
   [Expected Frogbot output](#expected-frogbot-output).
+- ⬜ **If you want one PR per branch instead of one PR per vulnerability**:
+  after the first scan, enable `aggregate_fixes` on this repo's Config
+  Profile in the JFrog Platform UI — see
+  [Config Profile — required for a single aggregated fix PR](#config-profile--required-for-a-single-aggregated-fix-pr).
+  This is a platform UI toggle, not a repo file, so it's not done yet and
+  can't be automated from here.
 
 ## Architecture
 
@@ -188,18 +194,48 @@ following were created:
 The exact JSON bodies used are saved in [`xray/policy.json`](xray/policy.json)
 and [`xray/watch.json`](xray/watch.json) for reference/reproduction.
 
-### Config Profile (not used — optional enhancement)
+### Config Profile — required for a single aggregated fix PR
 
-Frogbot v3 replaces the old `frogbot-config.yml` with an optional **Config
-Profile** object in the JFrog Platform, matched to your repository by its
-clone URL (requires Xray ≥ 3.117.0; this instance runs 3.150.2, so it's
-supported). Without a matching profile, Frogbot logs "Frogbot configurations
-will be derived from environment variables only" and proceeds with sensible
-defaults — which is what this demo relies on. If you want to customize
-min-severity thresholds, fixable-only behavior, or aggregate-fix PRs beyond
-Frogbot's defaults, create a Config Profile in the JFrog Platform UI and it
-will be picked up automatically on the next scan — no workflow changes
-needed.
+Frogbot v3 replaces the old `frogbot-config.yml` with a **Config Profile**
+object in the JFrog Platform, matched to your repository by its clone URL
+(requires Xray ≥ 3.117.0; this instance runs 3.150.2). There is always a
+profile in play — confirmed on this instance via
+`POST /xray/api/v1/xsc/profile_repos` with our repo's clone URL: before the
+repo has ever been scanned, it resolves to the platform-wide
+`System_Default_Profile`, which has `aggregate_fixes: false`. **That default
+is why Frogbot opens one PR per vulnerability instead of one PR per branch.**
+
+To get a single PR with all fixes on a branch (for a human to review and
+approve once), enable **`aggregate_fixes`** on the profile scoped to this
+repo:
+
+1. Push the repo and let the first `frogbot-scan-repository.yml` run
+   complete at least once (see [How to reproduce](#how-to-reproduce)). This
+   causes Xray to provision a repo-specific Config Profile — on this
+   instance, two prior demos show up as auto-created profiles named
+   `<git-host>-<timestamp>` (confirmed via `GET /xray/api/v1/xsc/profile`),
+   so expect one named similarly for this repo, e.g. `github.com-<ts>`.
+2. In the JFrog Platform UI, go to **Administration → Xray Settings →
+   Indexed Resources → Git Repositories** tab, and click this repo's entry
+   to open the **Frogbot Configuration** drawer.
+3. Open the **Auto-Fix** tab and toggle **"Group all fixes into one PR"**
+   (a.k.a. "Aggregate all dependency fixes into a single PR" — disabled by
+   default) to **on**.
+4. Re-run `frogbot-scan-repository.yml` (or wait for the next scheduled/push
+   scan). Each branch now gets a single PR titled `[🐸 Frogbot] Update
+   <N> dependencies`, containing every fixable vulnerability found on that
+   branch, instead of one PR per package.
+
+**Caveat:** this toggle is a JFrog Platform UI setting, not something wired
+into this repo's workflow files or committed config — no public, documented
+REST API for *writing* Config Profiles was found while building this demo
+(the `jfrog-client-go` SDK Frogbot itself uses only exposes read endpoints:
+`GET /xray/api/v1/xsc/profile`, `GET .../profile/{name}`,
+`POST .../profile_repos` for read-by-URL). If your Xray version predates
+Config Profiles (< 3.117.0) or you'd rather not touch platform-wide settings,
+the alternative is `aggregateFixes` in the legacy `frogbot-config.yml`, which
+is a Frogbot v2-only mechanism and isn't read by the `jfrog/frogbot@v3`
+action used here.
 
 ### Frogbot v3 GitHub Actions configuration
 
@@ -330,11 +366,18 @@ which aren't limited by the Watch's severity floor.
 
 ## Expected remediation pull requests
 
-For each fixable vulnerability, Frogbot opens a PR that bumps the single
+By default (`aggregate_fixes: false`, the platform-wide `System_Default_Profile`),
+Frogbot opens **one PR per fixable vulnerability**, each bumping a single
 dependency in `package.json`/`package-lock.json` to the version Xray reports
 as fixed (see the table above), titled `[🐸 Frogbot] Update version of
-<package> to <version>`, targeting the branch that was scanned. Merging it
-resolves that CVE on the next scan.
+<package> to <version>`, targeting the branch that was scanned.
+
+If you enable `aggregate_fixes` for this repo's Config Profile (see
+[above](#config-profile--required-for-a-single-aggregated-fix-pr)), Frogbot
+instead opens **one PR per branch** titled `[🐸 Frogbot] Update <N>
+dependencies`, bumping every fixable dependency on that branch in a single
+commit — the "one PR to review and approve" flow. Either way, merging the
+PR(s) resolves the corresponding CVEs on the next scan.
 
 ## Caveats
 
