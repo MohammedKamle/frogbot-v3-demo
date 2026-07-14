@@ -20,3 +20,5 @@ jobs:
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Ties violation reporting to the Security Policy created for this demo.
           JF_WATCHES: "frogbot-demo-npm-watch"
+          # Reports this scan into Xray's per-repo "Scans List" UI, same as scan-repository.
+          JF_USE_CONFIG_PROFILE: "TRUE"
