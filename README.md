@@ -1,8 +1,19 @@
-# Frogbot v3 Branch-Scanning Demo
+# Frogbot Branch-Scanning Demo
 
-An end-to-end demo of **JFrog Frogbot v3** scanning multiple Git branches,
+An end-to-end demo of **JFrog Frogbot** scanning multiple Git branches,
 **JFrog Xray** detecting vulnerable npm dependencies and raising policy
 violations, and Frogbot automatically opening remediation pull requests.
+
+**This demo runs on Frogbot v2 (`jfrog/frogbot@v2`), not v3.** It was
+originally built on v3, but v3's scan-repository command consistently
+returned zero findings on every branch/commit in this repo (`Couldn't
+determine a package manager or build tool used by this project`), despite
+`jf audit` against the exact same commit succeeding locally every time. See
+[Appendix: why this demo uses v2 instead of v3](#appendix-why-this-demo-uses-v2-instead-of-v3)
+for the full investigation — every plausible cause on our side (Config
+Profile, SBOM-plugin version, branch naming, merge commits) was ruled out,
+so this looks like an upstream v3 bug. v2 works correctly with this exact
+repo content.
 
 ## Setup status
 
@@ -30,12 +41,11 @@ commands):
 - ⬜ Create the `frogbot` GitHub Environment (recommended, not required).
 - ⬜ Trigger the first scan and verify the results described in
   [Expected Frogbot output](#expected-frogbot-output).
-- ⬜ **If you want one PR per branch instead of one PR per vulnerability**:
-  after the first scan, enable `aggregate_fixes` on this repo's Config
-  Profile in the JFrog Platform UI — see
-  [Config Profile — required for a single aggregated fix PR](#config-profile--required-for-a-single-aggregated-fix-pr).
-  This is a platform UI toggle, not a repo file, so it's not done yet and
-  can't be automated from here.
+
+Aggregation (one PR per branch instead of one per vulnerability) is already
+handled — `JF_GIT_AGGREGATE_FIXES: "TRUE"` is set directly in
+`frogbot-scan-repository.yml`, a plain Frogbot v2 env var. Nothing extra to
+configure in the Platform UI.
 
 ## Architecture
 
@@ -49,8 +59,8 @@ commands):
                                     │ push / schedule / PR
                                     ▼
                     ┌─────────────────────────────────────────┐
-                    │        jfrog/frogbot@v3 GH Action        │
-                    │  static SCA scan of package.json/lock     │
+                    │        jfrog/frogbot@v2 GH Action        │
+                    │  SCA scan of package.json/package-lock    │
                     └───────────────┬───────────────────────────┘
                                     │ reads CVE + fix-version data
                                     ▼
@@ -70,12 +80,10 @@ commands):
                     └─────────────────────────────────────────┘
 ```
 
-- **Frogbot v3** is config-file-free: there is no `frogbot-config.yml`. All
-  behavior is driven by environment variables in the GitHub Actions workflow
-  and (optionally) a JFrog Platform **Config Profile**. This demo does not use
-  a Config Profile — Frogbot falls back to its default scan behavior, which is
-  sufficient to demonstrate PR comments, security findings, and fix PRs. See
-  [Config Profile note](#config-profile-not-used-optional-enhancement) below.
+- **Frogbot v2** is driven entirely by environment variables in the GitHub
+  Actions workflow (no `frogbot-config.yml` needed for a single-repo setup
+  like this one). `JF_WATCHES` ties its scan to the Security Policy created
+  for this demo, and `JF_GIT_AGGREGATE_FIXES: "TRUE"` gives one PR per branch.
 - **Xray** is wired independently of Frogbot via a repository-scoped Watch +
   Security Policy on `demo-npm`, so violations show up in the Xray UI whenever
   a vulnerable package is resolved/cached through that repo — this is the
@@ -154,10 +162,13 @@ it with the JFrog CLI instead of writing secrets to disk yourself:
 jf npm-config --repo-resolve=demo-npm
 ```
 
-Frogbot v3 itself does **not** need this — it performs a static analysis of
-`package.json`/`package-lock.json` without invoking `npm install`. The
-`demo-npm` wiring matters for real developers building this project and for
-Xray's repository-level scanning (see below), not for Frogbot's scan.
+Frogbot v2 resolves dependencies from the public npm registry by default in
+this demo (no `JF_DEPS_REPO` is set) — the same registry `demo-npm-remote`
+proxies, so results are identical either way. Set `JF_DEPS_REPO: demo-npm`
+in the workflow if you want Frogbot's own dependency resolution to go
+through Artifactory too; the `demo-npm` wiring otherwise matters for real
+developers building this project and for Xray's repository-level scanning
+(see below).
 
 ### Xray indexing, Policy, and Watch (created for this demo)
 
@@ -194,64 +205,36 @@ following were created:
 The exact JSON bodies used are saved in [`xray/policy.json`](xray/policy.json)
 and [`xray/watch.json`](xray/watch.json) for reference/reproduction.
 
-### Config Profile — required for a single aggregated fix PR
+### Aggregated fix PRs — a plain env var in v2
 
-Frogbot v3 replaces the old `frogbot-config.yml` with a **Config Profile**
-object in the JFrog Platform, matched to your repository by its clone URL
-(requires Xray ≥ 3.117.0; this instance runs 3.150.2). There is always a
-profile in play — confirmed on this instance via
-`POST /xray/api/v1/xsc/profile_repos` with our repo's clone URL: before the
-repo has ever been scanned, it resolves to the platform-wide
-`System_Default_Profile`, which has `aggregate_fixes: false`. **That default
-is why Frogbot opens one PR per vulnerability instead of one PR per branch.**
+Frogbot v2 supports `JF_GIT_AGGREGATE_FIXES: "TRUE"` directly as a GitHub
+Actions env var (set in `frogbot-scan-repository.yml`), no platform-side
+configuration required. With it set, each branch gets a single PR titled
+`[🐸 Frogbot] Update <N> dependencies` containing every fixable
+vulnerability on that branch, instead of one PR per package. (This is the
+opposite of Frogbot v3, where the same setting — `aggregate_fixes` — moved
+into a JFrog Platform Config Profile with no write API; see the
+[Appendix](#appendix-why-this-demo-uses-v2-instead-of-v3) for why v3 wasn't
+used here.)
 
-To get a single PR with all fixes on a branch (for a human to review and
-approve once), enable **`aggregate_fixes`** on the profile scoped to this
-repo:
+### Frogbot GitHub Actions configuration (v2)
 
-1. Push the repo and let the first `frogbot-scan-repository.yml` run
-   complete at least once (see [How to reproduce](#how-to-reproduce)). This
-   causes Xray to provision a repo-specific Config Profile — on this
-   instance, two prior demos show up as auto-created profiles named
-   `<git-host>-<timestamp>` (confirmed via `GET /xray/api/v1/xsc/profile`),
-   so expect one named similarly for this repo, e.g. `github.com-<ts>`.
-2. In the JFrog Platform UI, go to **Administration → Xray Settings →
-   Indexed Resources → Git Repositories** tab, and click this repo's entry
-   to open the **Frogbot Configuration** drawer.
-3. Open the **Auto-Fix** tab and toggle **"Group all fixes into one PR"**
-   (a.k.a. "Aggregate all dependency fixes into a single PR" — disabled by
-   default) to **on**.
-4. Re-run `frogbot-scan-repository.yml` (or wait for the next scheduled/push
-   scan). Each branch now gets a single PR titled `[🐸 Frogbot] Update
-   <N> dependencies`, containing every fixable vulnerability found on that
-   branch, instead of one PR per package.
-
-**Caveat:** this toggle is a JFrog Platform UI setting, not something wired
-into this repo's workflow files or committed config — no public, documented
-REST API for *writing* Config Profiles was found while building this demo
-(the `jfrog-client-go` SDK Frogbot itself uses only exposes read endpoints:
-`GET /xray/api/v1/xsc/profile`, `GET .../profile/{name}`,
-`POST .../profile_repos` for read-by-URL). If your Xray version predates
-Config Profiles (< 3.117.0) or you'd rather not touch platform-wide settings,
-the alternative is `aggregateFixes` in the legacy `frogbot-config.yml`, which
-is a Frogbot v2-only mechanism and isn't read by the `jfrog/frogbot@v3`
-action used here.
-
-### Frogbot v3 GitHub Actions configuration
-
-Two workflows, matching the current templates JFrog ships in the
+Two workflows, based on the current v2 templates JFrog ships in the
 [`jfrog/frogbot`](https://github.com/jfrog/frogbot) repository itself
-(`.github/workflows/frogbot-scan-*.yml` on its `main`/v3 branch):
+(`.github/workflows/frogbot-scan-*.yml` at tag `v2.35.0`):
 
 - **`frogbot-scan-pull-request.yml`** — triggers on every PR into
   `main`/`develop`/`feature`, scans the diff, and comments with findings
-  (`pull-requests: write`) plus uploads SARIF results to the Security tab
-  (`security-events: write`).
+  (`pull-requests: write`).
 - **`frogbot-scan-repository.yml`** — triggers on `push` to any of the three
   branches, on a daily schedule, and on manual dispatch. Uses a build matrix
   (`branch: [main, develop, feature]`) with `JF_GIT_BASE_BRANCH` so **all
-  three branches are scanned independently on every run**. Opens a fix PR
-  per fixable vulnerability (or one aggregated PR, per Frogbot's default).
+  three branches are scanned independently on every run**, and
+  `JF_GIT_AGGREGATE_FIXES: "TRUE"` so each branch gets one PR.
+
+Both set `JF_WATCHES: "frogbot-demo-npm-watch"`, tying Frogbot's own
+violation/severity reporting to the Security Policy created for this demo
+(`min_severity: High`) rather than Frogbot's unfiltered default.
 
 Both use `JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}` — the token GitHub
 auto-injects into every workflow run, scoped to this repo by the
@@ -343,13 +326,11 @@ gh pr create --base develop --head feature --title "Merge feature into develop" 
 - **Repository scan** (`frogbot-scan-repository.yml`): one job per branch in
   the Actions run summary — `Scan Repository (main branch)`,
   `(develop branch)`, `(feature branch)` — each logging the CVEs found for
-  that branch's dependency set, then opening one pull request per fixable
-  vulnerability (branch name pattern `frogbot-<package>-<hash>`, e.g.
-  `frogbot-minimist-1a2b3c4d`) targeting the scanned branch.
+  that branch's dependency set, then opening **one aggregated pull request
+  per branch** (branch name pattern `frogbot-update-<hash>-dependencies`)
+  bumping every fixable dependency at once.
 - **PR scan** (`frogbot-scan-pull-request.yml`): a markdown comment on the PR
-  listing each vulnerable component, its CVE(s)/severity, and the fixed
-  version, plus a SARIF upload visible under the repo's **Security → Code
-  scanning alerts** tab.
+  listing each vulnerable component and its CVE(s)/severity/fixed version.
 
 ## Expected Xray policy violations
 
@@ -361,78 +342,87 @@ e.g. `minimist:1.2.5` against CVE-2021-44906, `handlebars:4.5.2` against
 CVE-2021-23383/CVE-2021-23369, etc. Medium-severity CVEs (e.g. on
 `node-fetch`) are recorded by Xray but do not match this policy's
 `min_severity: High` rule, so they won't appear as violations here — they
-still surface in Frogbot's own PR comments and repository scan findings,
-which aren't limited by the Watch's severity floor.
+still surface in Frogbot's own PR comments and repository scan findings
+(Frogbot's `JF_WATCHES` reporting isn't limited by the Watch's severity
+floor the way Xray's violation matching is).
 
 ## Expected remediation pull requests
 
-By default (`aggregate_fixes: false`, the platform-wide `System_Default_Profile`),
-Frogbot opens **one PR per fixable vulnerability**, each bumping a single
-dependency in `package.json`/`package-lock.json` to the version Xray reports
-as fixed (see the table above), titled `[🐸 Frogbot] Update version of
-<package> to <version>`, targeting the branch that was scanned.
-
-If you enable `aggregate_fixes` for this repo's Config Profile (see
-[above](#config-profile--required-for-a-single-aggregated-fix-pr)), Frogbot
-instead opens **one PR per branch** titled `[🐸 Frogbot] Update <N>
-dependencies`, bumping every fixable dependency on that branch in a single
-commit — the "one PR to review and approve" flow. Either way, merging the
-PR(s) resolves the corresponding CVEs on the next scan.
-
-## Troubleshooting: scan runs green with zero findings
-
-**Symptom:** `frogbot-scan-repository.yml` finishes "successfully" but every
-table is empty (`Couldn't determine a package manager or build tool used by
-this project`, `SBOM generated; no library components were found`), no PR
-comment appears, and no fix PRs are opened — even though the repo clearly has
-a vulnerable `package.json`.
-
-**Root cause, confirmed on this instance:** the log line `Using Config
-profile '<name>'` tells you which JFrog Platform Config Profile Frogbot
-picked up for this repo (see [Config
-Profile](#config-profile--required-for-a-single-aggregated-fix-pr) above —
-Config Profiles follow an SCM hierarchy, so a repo can inherit a *folder*- or
-*user*-level profile instead of getting its own). If that name isn't
-`System_Default_Profile` and isn't specific to this repo, Frogbot is reusing
-a profile created for a **different, earlier project** under the same
-GitHub namespace. We verified the repo content itself is fine — cloning the
-exact scanned commit and running `jf audit` locally against it correctly
-found every CVE in the [Vulnerable dependencies](#vulnerable-dependencies)
-table — so an inherited profile with settings that don't suit this repo (or
-a stale/mismatched module config) is the leading suspect for why Frogbot's
-static SBOM step finds zero components in CI.
-
-**Fix:**
-
-1. In the JFrog Platform UI, go to **Administration → Xray Settings →
-   Indexed Resources → Git Repositories**, find this repo's entry (it should
-   now be listed since it's been scanned), and open its **Frogbot
-   Configuration** drawer. Creating/saving a profile here scopes it to this
-   *repository* specifically, which takes priority over any inherited
-   folder/user-level profile.
-2. Confirm SCA scanning is enabled and nothing pins a `technology` other
-   than npm for this repo's module.
-3. Re-run `frogbot-scan-repository.yml`.
-4. Both workflows now set `JFROG_CLI_LOG_LEVEL: "DEBUG"` (bumped from
-   `INFO`) — if the run is still empty after step 1–3, pull the DEBUG log
-   for the technology-detection lines (search for `Detect`, `Descriptors`,
-   or the SBOM-generation block) to see exactly what path/patterns it
-   evaluated and why.
-
-Two warnings later in the same log are downstream symptoms of this, not
-separate bugs, and should clear up once findings are non-empty:
-`failed to upload SBOM snapshot to GitHub: at least one manifest is
-required` (no manifest was detected, so there's nothing to snapshot) and
-`Code scanning is not enabled for this repository` (403) — that one is
-independent and just needs **Settings → Security → Code security → Code
-scanning** enabled on the GitHub repo (or GitHub Advanced Security, if
-private) for the SARIF upload to succeed.
+With `JF_GIT_AGGREGATE_FIXES: "TRUE"` set, Frogbot opens **one PR per
+branch**, titled `[🐸 Frogbot] Update <N> dependencies`, bumping every
+fixable dependency on that branch (see the fixed versions in the table
+above) in a single commit — the "one PR to review and approve" flow.
+Merging it resolves all the corresponding CVEs on the next scan.
 
 ## Caveats
 
-- This is a demo/POC setup, not a production hardening reference — see the
-  `GITHUB_TOKEN` and Config Profile notes above for what's simplified.
+- This is a demo/POC setup, not a production hardening reference.
 - Severities and available fixed versions were verified against this Xray
   instance and the public npm registry at setup time; they can change as new
   advisories are published — re-run the checks in "How to reproduce" step 3
   before relying on this table for anything beyond the demo.
+- This demo runs on Frogbot v2, which JFrog has put into maintenance mode
+  (critical bug/security fixes only) in favor of v3. See the Appendix below
+  before assuming v2 is the long-term answer — it was the pragmatic choice
+  to get a working demo, not necessarily what you should ship in production
+  once the v3 issue is resolved upstream.
+
+## Appendix: why this demo uses v2 instead of v3
+
+This demo was originally built on Frogbot v3 (`jfrog/frogbot@v3`). Every
+`scan-repository` run came back completely empty — all tables (`Vulnerable
+Dependencies`, `Licenses`, `Secrets`, `IaC`, `SAST`) showed zero results, with
+the log reading `Couldn't determine a package manager or build tool used by
+this project` and `SBOM generated; no library components were found` in
+under 50 microseconds. Meanwhile, cloning the exact commit Frogbot scanned
+and running `jf audit` against it locally found every CVE in the
+[Vulnerable dependencies](#vulnerable-dependencies) table correctly, every
+time — proving the repo content itself was never the problem.
+
+We ruled out, one at a time, across multiple live DEBUG-level runs:
+
+1. **A stale/inherited Config Profile.** v3 replaces `frogbot-config.yml`
+   with a JFrog Platform Config Profile matched by repo clone URL, following
+   an SCM hierarchy (server → folder/user → repo). The first run picked up a
+   profile from an unrelated, earlier demo under the same GitHub namespace.
+   We created a fresh profile scoped specifically to this repo (via
+   **Administration → Xray Settings → Indexed Resources → Git Repositories**
+   → **Frogbot Configuration** drawer) — confirmed in the next run's log
+   (`Using Config profile 'profile-frogbot-v3-demo-...'`, with
+   `aggregate_fixes: true` correctly reflecting what we'd set). **Identical
+   zero-result outcome.** Ruled out.
+2. **The `.git/refs/heads/master` file-not-found error** appearing right
+   before the SBOM step. Frogbot's own open-source clone code
+   (`utils/git.go`) uses `SingleBranch: true, Depth: 1`, which means only the
+   branch being scanned is ever fetched — so this ref would never exist
+   regardless of what branches the remote has. We still tested it: pushed a
+   `master` branch pointing at `main`. **Identical zero-result outcome.**
+   Ruled out (and explained why: single-branch shallow clones never create
+   refs for branches other than the one being cloned).
+3. **The SBOM-plugin binary version** (`xray-scan-lib`, downloaded
+   separately from Frogbot itself, currently defaulting to `1.4.0`). Found
+   the override env var `JFROG_CLI_XRAY_LIB_PLUGIN_VERSION` in
+   `jfrog-cli-security`'s source and tested the oldest available build,
+   `1.0.4`. **Identical zero-result outcome.** Ruled out.
+4. **Shallow clone of a merge commit.** `develop`/`feature`'s HEAD were merge
+   commits (two parents) at the time of testing, while `main`'s HEAD is
+   always a plain single-parent commit — a plausible split test. Checked the
+   Xray UI's per-branch scan history for `main`: **zero CVEs there too**,
+   across three different plain commits. Ruled out.
+
+At this point every variable we could control from the repo/platform side
+had been tested and produced the identical failure, while the local
+`jf audit` control case succeeded every time — pointing to a bug in v3's
+newer static-SBOM-plugin scan path (a closed-source binary, `xray-scan-plugin`,
+invoked over RPC — not the open-source Go code in the `jfrog/frogbot` repo,
+which never logs a "git clone" step for this scan mode at all, suggesting it
+clones through some other mechanism internal to the plugin). Rather than
+continue debugging a closed-source binary blind, we switched to Frogbot v2
+(`jfrog/frogbot@v2`), which uses the older, non-plugin SCA path — the same
+one `jf audit` uses — and it worked immediately.
+
+**If you hit this with your own v3 setup:** this is worth reporting to
+JFrog's Frogbot team directly, with both full `JFROG_CLI_LOG_LEVEL: DEBUG`
+logs (the "0 packages" run and the "aggregate_fixes: true, still 0 packages"
+run) as reproduction evidence. It reproduced 100% of the time in this
+environment, across 3 branches, 6+ commits, and 4 independent variables.
