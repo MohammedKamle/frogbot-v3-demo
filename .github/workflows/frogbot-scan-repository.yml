@@ -24,7 +24,7 @@ jobs:
       matrix:
         branch: ["main", "develop", "feature"]
     steps:
-      - uses: jfrog/frogbot@v3
+      - uses: jfrog/frogbot@v3.1.0
         env:
           JF_URL: ${{ secrets.FROGBOT_URL }}
           JF_ACCESS_TOKEN: ${{ secrets.FROGBOT_ACCESS_TOKEN }}
