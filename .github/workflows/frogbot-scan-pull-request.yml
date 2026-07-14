@@ -6,17 +6,17 @@ on:
 permissions:
   pull-requests: write
   contents: read
-  security-events: write
 
 jobs:
   scan-pull-request:
     runs-on: ubuntu-latest
     environment: frogbot
     steps:
-      - uses: jfrog/frogbot@v3
+      - uses: jfrog/frogbot@v2
         env:
+          JFROG_CLI_LOG_LEVEL: "DEBUG"
           JF_URL: ${{ secrets.FROGBOT_URL }}
           JF_ACCESS_TOKEN: ${{ secrets.FROGBOT_ACCESS_TOKEN }}
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JFROG_CLI_LOG_LEVEL: "DEBUG"
-          JFROG_CLI_XRAY_LIB_PLUGIN_VERSION: "1.0.4"
+          # Ties violation reporting to the Security Policy created for this demo.
+          JF_WATCHES: "frogbot-demo-npm-watch"
