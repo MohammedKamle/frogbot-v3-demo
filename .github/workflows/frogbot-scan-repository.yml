@@ -24,10 +24,11 @@ jobs:
       matrix:
         branch: ["main", "develop", "feature"]
     steps:
-      - uses: jfrog/frogbot@v3.1.0
+      - uses: jfrog/frogbot@v3
         env:
           JF_URL: ${{ secrets.FROGBOT_URL }}
           JF_ACCESS_TOKEN: ${{ secrets.FROGBOT_ACCESS_TOKEN }}
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JF_GIT_BASE_BRANCH: ${{ matrix.branch }}
           JFROG_CLI_LOG_LEVEL: "DEBUG"
+          JFROG_CLI_XRAY_LIB_PLUGIN_VERSION: "1.0.4"
