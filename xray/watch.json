@@ -1,0 +1,32 @@
+{
+  "general_data": {
+    "name": "frogbot-demo-npm-watch",
+    "description": "Watches demo-npm-local and demo-npm-remote for the Frogbot v3 branch-scanning demo",
+    "active": true
+  },
+  "project_resources": {
+    "resources": [
+      {
+        "type": "repository",
+        "name": "demo-npm-local",
+        "bin_mgr_id": "default",
+        "repo_type": "local"
+      },
+      {
+        "type": "repository",
+        "name": "demo-npm-remote",
+        "bin_mgr_id": "default",
+        "repo_type": "remote"
+      }
+    ]
+  },
+  "assigned_policies": [
+    {
+      "name": "frogbot-demo-critical-high-policy",
+      "type": "security"
+    }
+  ],
+  "watch_recipients": [
+    "mohammedk@jfrog.com"
+  ]
+}

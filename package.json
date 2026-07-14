@@ -1,0 +1,20 @@
+{
+  "name": "frogbot-demo-greeting-service",
+  "version": "1.0.0",
+  "description": "Sample Node.js/npm project used to demo Frogbot v3 branch scanning, JFrog Xray policy violations, and automatic remediation pull requests.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node src/index.js --name=Frogbot --locale=en"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "minimist": "1.2.5",
+    "handlebars": "4.5.2",
+    "lodash": "4.17.15",
+    "decode-uri-component": "0.2.0",
+    "moment": "2.29.1",
+    "node-fetch": "2.6.0"
+  }
+}

@@ -1,0 +1,6 @@
+# Copy to .npmrc locally (do not commit a real .npmrc — see README "JFrog Integration").
+# npm supports ${VAR} environment-variable interpolation directly in .npmrc,
+# so no JFrog hostname is ever hardcoded in this repo.
+registry=${JFROG_URL}/artifactory/api/npm/demo-npm/
+//${JFROG_NPM_REGISTRY_HOST}/artifactory/api/npm/demo-npm/:_authToken=${JFROG_TOKEN}
+always-auth=true

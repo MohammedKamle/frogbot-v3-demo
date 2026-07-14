@@ -1,0 +1,24 @@
+{
+  "name": "frogbot-demo-critical-high-policy",
+  "type": "security",
+  "description": "Demo policy for Frogbot v3 branch-scanning showcase: flags Critical & High severity CVEs resolved through demo-npm and generates violations/tickets without blocking downloads (so the demo repo can still resolve vulnerable packages for Frogbot to scan and fix).",
+  "rules": [
+    {
+      "name": "critical-high-cves",
+      "priority": 1,
+      "criteria": {
+        "min_severity": "High",
+        "fix_version_dependant": false,
+        "malicious_package": false
+      },
+      "actions": {
+        "mails": ["mohammedk@jfrog.com"],
+        "create_ticket_enabled": true,
+        "block_download": {
+          "active": false,
+          "unscanned": false
+        }
+      }
+    }
+  ]
+}
