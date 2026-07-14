@@ -2,7 +2,7 @@
 
 An end-to-end demo of **JFrog Frogbot** scanning multiple Git branches,
 **JFrog Xray** detecting vulnerable npm dependencies and raising policy
-violations, and Frogbot automatically opening remediation pull requests.
+violations, and Frogbot automatically opening remedidation pull requests.
 
 **This demo runs on Frogbot v2 (`jfrog/frogbot@v2`), not v3.** It was
 originally built on v3, but v3's scan-repository command consistently
