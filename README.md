@@ -4,6 +4,33 @@ An end-to-end demo of **JFrog Frogbot v3** scanning multiple Git branches,
 **JFrog Xray** detecting vulnerable npm dependencies and raising policy
 violations, and Frogbot automatically opening remediation pull requests.
 
+## Setup status
+
+Already done in this working directory / on the JFrog Platform:
+
+- ✅ Local git repo initialized with 3 branches (`main` → `develop` →
+  `feature`, in that ancestry order) and vulnerable dependencies committed —
+  see [Vulnerable dependencies](#vulnerable-dependencies).
+- ✅ Xray indexing enabled on `demo-npm-remote`.
+- ✅ Xray Security Policy `frogbot-demo-critical-high-policy` and Watch
+  `frogbot-demo-npm-watch` created and live (see
+  [Xray indexing, Policy, and Watch](#xray-indexing-policy-and-watch-created-for-this-demo)).
+- ✅ A dedicated 90-day JFrog access token minted for Frogbot's use (`token_id`
+  `1f0931a9-eff5-4430-b541-3f5e0a89b792`, description
+  `frogbot-v3-branch-scan-demo-token`) — the raw value is in the
+  git-ignored `.frogbot-access-token.local` file in this directory (not
+  committed). Use it for the `FROGBOT_ACCESS_TOKEN` secret below, then delete
+  the file.
+
+Still needed from you (see [How to reproduce](#how-to-reproduce) for exact
+commands):
+
+- ⬜ Create the GitHub repo and push the three branches.
+- ⬜ Add the `FROGBOT_URL` / `FROGBOT_ACCESS_TOKEN` repo secrets.
+- ⬜ Create the `frogbot` GitHub Environment (recommended, not required).
+- ⬜ Trigger the first scan and verify the results described in
+  [Expected Frogbot output](#expected-frogbot-output).
+
 ## Architecture
 
 ```
@@ -218,35 +245,61 @@ forks.
 
 ## How to reproduce
 
+The commands below are split into **what already ran** (for reference /
+audit) and **what's left for you** to run from this directory.
+
+### Already run (for reference — do not repeat)
+
 ```bash
-# 1. Scaffold the project
-mkdir my-frogbot-demo && cd my-frogbot-demo
-npm init -y
-npm install minimist@1.2.5 handlebars@4.5.2 lodash@4.17.15 \
-  decode-uri-component@0.2.0 moment@2.29.1 node-fetch@2.6.0
-
-# 2. Create the GitHub repo and branches
-gh repo create <org>/<repo> --private --source=. --push
-git checkout -b develop && npm install ejs@3.1.5 qs@6.9.6 && git commit -am "develop: add ejs, qs"
-git checkout -b feature && npm install y18n@4.0.0 underscore@1.12.0 && git commit -am "feature: add y18n, underscore"
-git push -u origin develop feature
-
-# 3. Check for an existing Xray policy that fails/violates on Critical+High
+# Xray: checked for an existing policy that fails/violates on Critical+High
 curl -s -H "Authorization: Bearer $JFROG_TOKEN" "$JFROG_URL/xray/api/v2/policies" | jq .
-# none found scoped appropriately -> create one (see xray/policy.json, xray/watch.json)
+curl -s -H "Authorization: Bearer $JFROG_TOKEN" "$JFROG_URL/xray/api/v2/watches" | jq .
+# -> none scoped appropriately, so:
+
+# Enabled Xray indexing on demo-npm-remote (demo-npm-local was already indexed)
+curl -X PUT "$JFROG_URL/xray/api/v1/binMgr/default/repos" \
+  -H "Authorization: Bearer $JFROG_TOKEN" -H "Content-Type: application/json" \
+  --data @<merged-indexed-repos-payload>
+
+# Created the policy and watch
 curl -X POST "$JFROG_URL/xray/api/v2/policies" -H "Authorization: Bearer $JFROG_TOKEN" \
   -H "Content-Type: application/json" -d @xray/policy.json
 curl -X POST "$JFROG_URL/xray/api/v2/watches" -H "Authorization: Bearer $JFROG_TOKEN" \
   -H "Content-Type: application/json" -d @xray/watch.json
 
-# 4. Add the Frogbot v3 workflows (see .github/workflows/) and push
+# Minted a dedicated, time-limited access token for Frogbot to use
+curl -X POST "$JFROG_URL/access/api/v1/tokens" -H "Authorization: Bearer $JFROG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"applied-permissions/admin","expires_in":7776000,"description":"frogbot-v3-branch-scan-demo-token"}'
 
-# 5. Add repo secrets
+# Local git repo: main -> develop -> feature, each adding its own vulnerable deps
+git init -b main && git add -A && git commit -m "..."
+git checkout -b develop && npm install ejs@3.1.5 qs@6.9.6 --save-exact && git commit -am "..."
+git checkout -b feature && npm install y18n@4.0.0 underscore@1.12.0 --save-exact && git commit -am "..."
+```
+
+### Left for you
+
+```bash
+# 1. Create the GitHub repo from this directory and push all 3 branches
+cd /Users/mohammedk/scratch-work/scm-branch-scan-frogbot
+gh repo create <org-or-user>/<repo-name> --private --source=. --remote=origin
+git push -u origin main develop feature
+
+# 2. Add the required secrets (see "Required GitHub secrets" below)
 gh secret set FROGBOT_URL --body "$JFROG_URL"
-gh secret set FROGBOT_ACCESS_TOKEN --body "<minted-token>"
+gh secret set FROGBOT_ACCESS_TOKEN < .frogbot-access-token.local
+rm .frogbot-access-token.local   # delete the local copy once it's in GitHub
 
-# 6. Trigger a scan
+# 3. (Recommended) create the "frogbot" GitHub Environment referenced by both workflows
+gh api -X PUT "repos/<org-or-user>/<repo-name>/environments/frogbot"
+
+# 4. Trigger the first scan (scans all 3 branches via the matrix in the workflow)
 gh workflow run frogbot-scan-repository.yml
+gh run watch   # follow it live; or check the Actions tab in the GitHub UI
+
+# 5. Open a PR (e.g. feature -> develop) to see the PR-scan workflow comment
+gh pr create --base develop --head feature --title "Merge feature into develop" --body "Frogbot PR-scan demo"
 ```
 
 ## Expected Frogbot output
