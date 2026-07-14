@@ -35,6 +35,14 @@ function main() {
   const locale = args.locale || 'en';
   // eslint-disable-next-line no-console
   console.log(buildGreeting(name, locale));
+
+  if (args.advanced) {
+    // eslint-disable-next-line global-require
+    const { renderCard, parseGreetingQuery } = require('./advanced');
+    const query = parseGreetingQuery(args.query || 'tags=frogbot,xray');
+    // eslint-disable-next-line no-console
+    console.log(renderCard(name, (query.tags || '').split(',')));
+  }
 }
 
 main();

@@ -10,11 +10,13 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
-    "minimist": "1.2.5",
+    "decode-uri-component": "0.2.0",
+    "ejs": "3.1.5",
     "handlebars": "4.5.2",
     "lodash": "4.17.15",
-    "decode-uri-component": "0.2.0",
+    "minimist": "1.2.5",
     "moment": "2.29.1",
-    "node-fetch": "2.6.0"
+    "node-fetch": "2.6.0",
+    "qs": "6.9.6"
   }
 }
