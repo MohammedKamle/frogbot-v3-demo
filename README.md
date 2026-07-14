@@ -447,3 +447,44 @@ JFrog's Frogbot team directly, with both full `JFROG_CLI_LOG_LEVEL: DEBUG`
 logs (the "0 packages" run and the "aggregate_fixes: true, still 0 packages"
 run) as reproduction evidence. It reproduced 100% of the time in this
 environment, across 3 branches, 6+ commits, and 4 independent variables.
+
+## Known v2 bug: re-scanning a branch with an already-open fix PR
+
+**Symptom:** the *first* `scan-repository` run against a branch is always
+clean — scan, violations, and PR creation all succeed. A *second* run against
+the same branch (while that PR is still open) fails at the very last step:
+
+```
+[Error] failed while creating aggregated pull request. Error:
+failed to get comments. the following details were used in order to fetch
+the comments: <owner/repo> pull request #0. the error received: validation
+failed: required parameter 'owner' is missing, required parameter
+'repository' is missing
+```
+
+**Root cause (confirmed in Frogbot v2.35.0 source, `utils/comment.go`):**
+before posting/updating a PR, Frogbot tries to delete its own previous
+comments. `DeletePullRequestComments(repo, client, pullRequestID)` correctly
+receives the right `pullRequestID`, but the function it calls internally —
+`DeleteExistingPullRequestComments(repository, client)` — takes **no**
+`pullRequestID` parameter and instead reads `repository.PullRequestDetails.ID`,
+which is only ever populated in the `scan-pull-request` command context, not
+`scan-repository`. In `scan-repository`'s aggregate-PR-update path that field
+is always `0`, so the comment-fetch call fails with the confusing
+"pull request #0" / "owner is missing" error. (Its sibling function,
+`DeleteExistingPullRequestReviewComments(repo, pullRequestID, client)`, takes
+the parameter correctly — this looks like a one-off oversight, not a
+structural issue.)
+
+**Impact:** cosmetic but job-failing. The actual work (dependency bumps,
+commit, push, PR title/body update) completes successfully **before** this
+error — confirmed by checking the PR's `updatedAt` timestamp and diff after
+a "failed" run. Only the trailing comment-cleanup step, and therefore the
+GitHub Actions job's exit code, is affected.
+
+**For a live demo:** merge or close the open Frogbot PR before re-triggering
+`frogbot-scan-repository.yml` — the next run creates a fresh PR with no
+comments to delete, so it stays green. If you want to demonstrate the
+"re-scan updates the existing PR" behavior specifically, narrate that the
+red X is this known, narrow bug and the PR itself did update correctly
+(worth pointing at the file diff / timestamp as proof).
