@@ -43,6 +43,13 @@ function main() {
     // eslint-disable-next-line no-console
     console.log(renderCard(name, (query.tags || '').split(',')));
   }
+
+  if (args.i18n) {
+    // eslint-disable-next-line global-require
+    const { localizedSuffix } = require('./i18n');
+    // eslint-disable-next-line no-console
+    console.log(localizedSuffix(locale));
+  }
 }
 
 main();
