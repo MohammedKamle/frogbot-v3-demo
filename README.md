@@ -15,37 +15,35 @@ Profile, SBOM-plugin version, branch naming, merge commits) was ruled out,
 so this looks like an upstream v3 bug. v2 works correctly with this exact
 repo content.
 
-## Setup status
+## Setup status: fully working end to end
 
-Already done in this working directory / on the JFrog Platform:
+Confirmed live at `github.com/MohammedKamle/frogbot-v3-demo`:
 
-- ✅ Local git repo initialized with 3 branches (`main` → `develop` →
-  `feature`, in that ancestry order) and vulnerable dependencies committed —
-  see [Vulnerable dependencies](#vulnerable-dependencies).
-- ✅ Xray indexing enabled on `demo-npm-remote`.
-- ✅ Xray Security Policy `frogbot-demo-critical-high-policy` and Watch
-  `frogbot-demo-npm-watch` created and live (see
-  [Xray indexing, Policy, and Watch](#xray-indexing-policy-and-watch-created-for-this-demo)).
-- ✅ A dedicated 90-day JFrog access token minted for Frogbot's use (`token_id`
-  `1f0931a9-eff5-4430-b541-3f5e0a89b792`, description
-  `frogbot-v3-branch-scan-demo-token`) — the raw value is in the
-  git-ignored `.frogbot-access-token.local` file in this directory (not
-  committed). Use it for the `FROGBOT_ACCESS_TOKEN` secret below, then delete
-  the file.
+- ✅ 3 branches (`main` → `develop` → `feature`) pushed, each with its own
+  vulnerable dependency set — see [Vulnerable dependencies](#vulnerable-dependencies).
+- ✅ Xray indexing, Security Policy `frogbot-demo-critical-high-policy`, and
+  Watch `frogbot-demo-npm-watch` live — see
+  [Xray indexing, Policy, and Watch](#xray-indexing-policy-and-watch-created-for-this-demo).
+- ✅ A dedicated 90-day JFrog access token minted for Frogbot's use rather
+  than reusing a long-lived personal/admin token (`token_id`
+  `1f0931a9-eff5-4430-b541-3f5e0a89b792`).
+- ✅ `frogbot-scan-repository.yml` ran successfully on all 3 branches: Xray
+  reported **16 Security Violations** tied to `frogbot-demo-npm-watch`
+  (Critical/High CVEs against `handlebars`, `minimist`, `decode-uri-component`,
+  `moment`, `lodash`), and Frogbot opened **one aggregated fix PR per branch**:
+  [#1 → `develop`](../../pull/1), [#2 → `feature`](../../pull/2),
+  [#3 → `main`](../../pull/3) — each bumping every fixable direct dependency
+  in a single commit (`JF_GIT_AGGREGATE_FIXES: "TRUE"`).
+- ✅ One extra one-time GitHub repo setting was required beyond the secrets:
+  **Settings → Actions → General → Workflow permissions → "Allow GitHub
+  Actions to create and approve pull requests"**. Without it, Frogbot builds
+  the fix branch and pushes it, then fails at the last step
+  (`403 GitHub Actions is not permitted to create or approve pull requests`).
+  This was flipped via `gh api -X PUT repos/<owner>/<repo>/actions/permissions/workflow
+  -f default_workflow_permissions=write -F can_approve_pull_request_reviews=true`.
 
-Still needed from you (see [How to reproduce](#how-to-reproduce) for exact
-commands):
-
-- ⬜ Create the GitHub repo and push the three branches.
-- ⬜ Add the `FROGBOT_URL` / `FROGBOT_ACCESS_TOKEN` repo secrets.
-- ⬜ Create the `frogbot` GitHub Environment (recommended, not required).
-- ⬜ Trigger the first scan and verify the results described in
-  [Expected Frogbot output](#expected-frogbot-output).
-
-Aggregation (one PR per branch instead of one per vulnerability) is already
-handled — `JF_GIT_AGGREGATE_FIXES: "TRUE"` is set directly in
-`frogbot-scan-repository.yml`, a plain Frogbot v2 env var. Nothing extra to
-configure in the Platform UI.
+See [How to reproduce](#how-to-reproduce) if you're setting this up fresh
+against a different repo.
 
 ## Architecture
 
@@ -210,7 +208,7 @@ and [`xray/watch.json`](xray/watch.json) for reference/reproduction.
 Frogbot v2 supports `JF_GIT_AGGREGATE_FIXES: "TRUE"` directly as a GitHub
 Actions env var (set in `frogbot-scan-repository.yml`), no platform-side
 configuration required. With it set, each branch gets a single PR titled
-`[🐸 Frogbot] Update <N> dependencies` containing every fixable
+`[🐸 Frogbot] Update npm dependencies` containing every fixable
 vulnerability on that branch, instead of one PR per package. (This is the
 opposite of Frogbot v3, where the same setting — `aggregate_fixes` — moved
 into a JFrog Platform Config Profile with no write API; see the
@@ -264,60 +262,68 @@ forks.
 
 ## How to reproduce
 
-The commands below are split into **what already ran** (for reference /
-audit) and **what's left for you** to run from this directory.
-
-### Already run (for reference — do not repeat)
+Full command history from this build, in order. Reuse this list if you're
+setting the same demo up against a different repo/org.
 
 ```bash
-# Xray: checked for an existing policy that fails/violates on Critical+High
+# 1. Xray: checked for an existing policy that fails/violates on Critical+High
 curl -s -H "Authorization: Bearer $JFROG_TOKEN" "$JFROG_URL/xray/api/v2/policies" | jq .
 curl -s -H "Authorization: Bearer $JFROG_TOKEN" "$JFROG_URL/xray/api/v2/watches" | jq .
 # -> none scoped appropriately, so:
 
-# Enabled Xray indexing on demo-npm-remote (demo-npm-local was already indexed)
+# 2. Enabled Xray indexing on demo-npm-remote (demo-npm-local was already indexed)
 curl -X PUT "$JFROG_URL/xray/api/v1/binMgr/default/repos" \
   -H "Authorization: Bearer $JFROG_TOKEN" -H "Content-Type: application/json" \
   --data @<merged-indexed-repos-payload>
 
-# Created the policy and watch
+# 3. Created the policy and watch
 curl -X POST "$JFROG_URL/xray/api/v2/policies" -H "Authorization: Bearer $JFROG_TOKEN" \
   -H "Content-Type: application/json" -d @xray/policy.json
 curl -X POST "$JFROG_URL/xray/api/v2/watches" -H "Authorization: Bearer $JFROG_TOKEN" \
   -H "Content-Type: application/json" -d @xray/watch.json
 
-# Minted a dedicated, time-limited access token for Frogbot to use
+# 4. Minted a dedicated, time-limited access token for Frogbot to use
 curl -X POST "$JFROG_URL/access/api/v1/tokens" -H "Authorization: Bearer $JFROG_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"scope":"applied-permissions/admin","expires_in":7776000,"description":"frogbot-v3-branch-scan-demo-token"}'
 
-# Local git repo: main -> develop -> feature, each adding its own vulnerable deps
+# 5. Local git repo: main -> develop -> feature, each adding its own vulnerable deps
 git init -b main && git add -A && git commit -m "..."
 git checkout -b develop && npm install ejs@3.1.5 qs@6.9.6 --save-exact && git commit -am "..."
 git checkout -b feature && npm install y18n@4.0.0 underscore@1.12.0 --save-exact && git commit -am "..."
-```
 
-### Left for you
-
-```bash
-# 1. Create the GitHub repo from this directory and push all 3 branches
-cd /Users/mohammedk/scratch-work/scm-branch-scan-frogbot
+# 6. Created the GitHub repo and pushed all 3 branches
 gh repo create <org-or-user>/<repo-name> --private --source=. --remote=origin
 git push -u origin main develop feature
 
-# 2. Add the required secrets (see "Required GitHub secrets" below)
+# 7. Added the required secrets (see "Required GitHub secrets" below)
 gh secret set FROGBOT_URL --body "$JFROG_URL"
 gh secret set FROGBOT_ACCESS_TOKEN < .frogbot-access-token.local
-rm .frogbot-access-token.local   # delete the local copy once it's in GitHub
 
-# 3. (Recommended) create the "frogbot" GitHub Environment referenced by both workflows
+# 8. Created the "frogbot" GitHub Environment referenced by both workflows
 gh api -X PUT "repos/<org-or-user>/<repo-name>/environments/frogbot"
 
-# 4. Trigger the first scan (scans all 3 branches via the matrix in the workflow)
-gh workflow run frogbot-scan-repository.yml
-gh run watch   # follow it live; or check the Actions tab in the GitHub UI
+# 9. First scan attempt (jfrog/frogbot@v3): zero findings on every branch/commit.
+#    Ruled out Config Profile, SBOM-plugin version, master ref, merge commits
+#    (see Appendix) - switched both workflows to jfrog/frogbot@v2.
 
-# 5. Open a PR (e.g. feature -> develop) to see the PR-scan workflow comment
+# 10. Second attempt (v2): scan found everything correctly, but the final
+#     "create pull request" step 403'd:
+#       GitHub Actions is not permitted to create or approve pull requests.
+#     Fixed with one GitHub repo setting, beyond the workflow's own
+#     `permissions:` block:
+gh api -X PUT "repos/<org-or-user>/<repo-name>/actions/permissions/workflow" \
+  -f default_workflow_permissions=write \
+  -F can_approve_pull_request_reviews=true
+# (equivalently: Settings -> Actions -> General -> Workflow permissions ->
+#  "Allow GitHub Actions to create and approve pull requests")
+
+# 11. Re-ran and confirmed: 16 Xray violations, one aggregated fix PR per branch
+gh workflow run frogbot-scan-repository.yml
+gh run watch
+gh pr list --state all
+
+# 12. Open a PR (e.g. feature -> develop) to see the PR-scan workflow comment
 gh pr create --base develop --head feature --title "Merge feature into develop" --body "Frogbot PR-scan demo"
 ```
 
@@ -332,27 +338,39 @@ gh pr create --base develop --head feature --title "Merge feature into develop" 
 - **PR scan** (`frogbot-scan-pull-request.yml`): a markdown comment on the PR
   listing each vulnerable component and its CVE(s)/severity/fixed version.
 
-## Expected Xray policy violations
+## Confirmed Xray policy violations
 
-Once `demo-npm-remote` resolves any of the vulnerable packages above (e.g.
-via `npm install` through `demo-npm`, or Frogbot/Xray indexing the cached
-tarball), the Xray UI (**Watches & Policies → Violations**, filtered to watch
-`frogbot-demo-npm-watch`) shows a Security violation per Critical/High CVE,
-e.g. `minimist:1.2.5` against CVE-2021-44906, `handlebars:4.5.2` against
-CVE-2021-23383/CVE-2021-23369, etc. Medium-severity CVEs (e.g. on
-`node-fetch`) are recorded by Xray but do not match this policy's
-`min_severity: High` rule, so they won't appear as violations here — they
-still surface in Frogbot's own PR comments and repository scan findings
-(Frogbot's `JF_WATCHES` reporting isn't limited by the Watch's severity
-floor the way Xray's violation matching is).
+`frogbot-scan-repository.yml`'s `main` branch job reported **16 Security
+Violations** attributed to watch `frogbot-demo-npm-watch`, including
+Critical/High CVEs against `handlebars` (multiple CVEs, e.g. CVE-2026-33937,
+CVE-2021-23383/CVE-2021-23369), `minimist` (CVE-2021-44906 — flagged twice:
+once as a direct dependency and once as the version `handlebars`'
+`optimist`→`minimist` chain pulls in transitively), `decode-uri-component`
+(CVE-2022-38900), and `moment` (CVE-2022-24785), each row showing the
+Contextual Analysis result (`Applicable` / `Not Applicable` / `Missing
+Context`) and fixed version(s). Same output is visible in the Xray UI under
+**Watches & Policies → Violations**, filtered to `frogbot-demo-npm-watch`.
+`develop`/`feature` report additional violations for their extra dependencies
+(`ejs`, `qs`, `y18n`, `underscore`).
 
-## Expected remediation pull requests
+## Confirmed remediation pull requests
 
-With `JF_GIT_AGGREGATE_FIXES: "TRUE"` set, Frogbot opens **one PR per
-branch**, titled `[🐸 Frogbot] Update <N> dependencies`, bumping every
-fixable dependency on that branch (see the fixed versions in the table
-above) in a single commit — the "one PR to review and approve" flow.
-Merging it resolves all the corresponding CVEs on the next scan.
+With `JF_GIT_AGGREGATE_FIXES: "TRUE"` set, Frogbot opened **one aggregated
+PR per branch**, titled `[🐸 Frogbot] Update npm dependencies`:
+
+| PR | Branch | Bumped |
+|---|---|---|
+| [#3](../../pull/3) | `main` | `moment` 2.29.1→2.29.4, `lodash` 4.17.15→4.18.0, `handlebars` 4.5.2→4.7.9, `decode-uri-component` 0.2.0→0.2.1 |
+| [#1](../../pull/1) | `develop` | same as `main`, plus `ejs`/`qs` fixes |
+| [#2](../../pull/2) | `feature` | same as `develop`, plus `y18n`/`underscore` fixes |
+
+`minimist` (direct, 1.2.5) was **not** bumped on any branch — Frogbot's log
+explains why: `minimist is an indirect dependency that will not be updated
+to version 1.2.6. Fixing indirect dependencies can potentially cause
+conflicts...`. This is Frogbot's own conflict-avoidance logic (it also
+appears as a transitive dependency via `handlebars → optimist → minimist`,
+at a different pinned version) — expected, documented behavior, not a bug.
+Merging a PR resolves the corresponding CVEs on the next scan.
 
 ## Caveats
 
@@ -419,7 +437,10 @@ which never logs a "git clone" step for this scan mode at all, suggesting it
 clones through some other mechanism internal to the plugin). Rather than
 continue debugging a closed-source binary blind, we switched to Frogbot v2
 (`jfrog/frogbot@v2`), which uses the older, non-plugin SCA path — the same
-one `jf audit` uses — and it worked immediately.
+one `jf audit` uses — and **it worked immediately**: correct dependency
+tree, 16 Xray violations, and (after also fixing the GitHub Actions
+PR-creation permission — see [Setup status](#setup-status-fully-working-end-to-end))
+one aggregated fix PR per branch, all confirmed live on this repo.
 
 **If you hit this with your own v3 setup:** this is worth reporting to
 JFrog's Frogbot team directly, with both full `JFROG_CLI_LOG_LEVEL: DEBUG`
