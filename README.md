@@ -379,6 +379,55 @@ dependencies`, bumping every fixable dependency on that branch in a single
 commit — the "one PR to review and approve" flow. Either way, merging the
 PR(s) resolves the corresponding CVEs on the next scan.
 
+## Troubleshooting: scan runs green with zero findings
+
+**Symptom:** `frogbot-scan-repository.yml` finishes "successfully" but every
+table is empty (`Couldn't determine a package manager or build tool used by
+this project`, `SBOM generated; no library components were found`), no PR
+comment appears, and no fix PRs are opened — even though the repo clearly has
+a vulnerable `package.json`.
+
+**Root cause, confirmed on this instance:** the log line `Using Config
+profile '<name>'` tells you which JFrog Platform Config Profile Frogbot
+picked up for this repo (see [Config
+Profile](#config-profile--required-for-a-single-aggregated-fix-pr) above —
+Config Profiles follow an SCM hierarchy, so a repo can inherit a *folder*- or
+*user*-level profile instead of getting its own). If that name isn't
+`System_Default_Profile` and isn't specific to this repo, Frogbot is reusing
+a profile created for a **different, earlier project** under the same
+GitHub namespace. We verified the repo content itself is fine — cloning the
+exact scanned commit and running `jf audit` locally against it correctly
+found every CVE in the [Vulnerable dependencies](#vulnerable-dependencies)
+table — so an inherited profile with settings that don't suit this repo (or
+a stale/mismatched module config) is the leading suspect for why Frogbot's
+static SBOM step finds zero components in CI.
+
+**Fix:**
+
+1. In the JFrog Platform UI, go to **Administration → Xray Settings →
+   Indexed Resources → Git Repositories**, find this repo's entry (it should
+   now be listed since it's been scanned), and open its **Frogbot
+   Configuration** drawer. Creating/saving a profile here scopes it to this
+   *repository* specifically, which takes priority over any inherited
+   folder/user-level profile.
+2. Confirm SCA scanning is enabled and nothing pins a `technology` other
+   than npm for this repo's module.
+3. Re-run `frogbot-scan-repository.yml`.
+4. Both workflows now set `JFROG_CLI_LOG_LEVEL: "DEBUG"` (bumped from
+   `INFO`) — if the run is still empty after step 1–3, pull the DEBUG log
+   for the technology-detection lines (search for `Detect`, `Descriptors`,
+   or the SBOM-generation block) to see exactly what path/patterns it
+   evaluated and why.
+
+Two warnings later in the same log are downstream symptoms of this, not
+separate bugs, and should clear up once findings are non-empty:
+`failed to upload SBOM snapshot to GitHub: at least one manifest is
+required` (no manifest was detected, so there's nothing to snapshot) and
+`Code scanning is not enabled for this repository` (403) — that one is
+independent and just needs **Settings → Security → Code security → Code
+scanning** enabled on the GitHub repo (or GitHub Advanced Security, if
+private) for the SARIF upload to succeed.
+
 ## Caveats
 
 - This is a demo/POC setup, not a production hardening reference — see the
