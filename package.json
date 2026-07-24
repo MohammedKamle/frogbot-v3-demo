@@ -10,11 +10,11 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "decode-uri-component": "^0.2.1",
+    "handlebars": "^4.7.9",
+    "lodash": "^4.18.0",
     "minimist": "1.2.5",
-    "handlebars": "4.5.2",
-    "lodash": "4.17.15",
-    "decode-uri-component": "0.2.0",
-    "moment": "2.29.1",
+    "moment": "^2.29.4",
     "node-fetch": "2.6.0"
   }
 }
